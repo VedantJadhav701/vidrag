@@ -39,9 +39,11 @@ def answer_question(client: genai.Client, question: str,
         )
 
     prompt = (
-        "You are a helpful assistant. Based on the attached video frames, "
-        f"answer the following question: {question}\n\n"
-        "If the frames do not contain enough information, say so."
+        "You are a precise visual analyst. You have been given several video frames that are the most relevant "
+        "to the user's question. Answer the question using ONLY what you see in those frames. "
+        "Quote any visible text, describe colors, shapes, and positions. "
+        "If the question cannot be answered from the frames, say so clearly. "
+        "End your answer with bullet-point citations linking each statement to a frame timestamp."
     )
     contents = [prompt] + image_parts
     response = client.models.generate_content(

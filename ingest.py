@@ -49,6 +49,8 @@ def extract_frames(video_path: Path, interval: int = None, progress_callback: Op
     frames = []
     config.FRAMES_DIR.mkdir(exist_ok=True)
     video_id = video_path.stem
+    video_frame_dir = config.FRAMES_DIR / video_id
+    video_frame_dir.mkdir(exist_ok=True)
 
     total_secs = int(duration)
     for i, sec in enumerate(tqdm(range(0, total_secs, interval), desc="Extracting frames")):
@@ -59,7 +61,7 @@ def extract_frames(video_path: Path, interval: int = None, progress_callback: Op
         ret, frame = cap.read()
         if not ret:
             break
-        frame_path = config.FRAMES_DIR / f"{video_id}_{sec:06d}.jpg"
+        frame_path = video_frame_dir / f"{sec:06d}.jpg"
         cv2.imwrite(str(frame_path), frame)
         frames.append({"timestamp_sec": sec, "frame_path": str(frame_path)})
 
@@ -72,10 +74,20 @@ def describe_frame(client: genai.Client, frame_path: str) -> str:
         return describe_frame_local(frame_path)
     with open(frame_path, "rb") as f:
         img_bytes = f.read()
+    
+    prompt = (
+        "You are a professional video analyst. Examine this frame as if you were writing a forensic report. "
+        "List every visible element: objects, people, clothing, text, numbers, colors, lighting, facial expressions, "
+        "background details, and any actions. If there is text or a diagram, transcribe it exactly. "
+        "If a person is speaking, note their emotion and gesture. "
+        "Describe the scene with enough precision that a blind person could imagine it. "
+        "Do NOT make assumptions – only describe what is clearly visible."
+    )
+    
     response = client.models.generate_content(
         model=config.VISION_MODEL,
         contents=[
-            "Describe this video frame in detail, focusing on visible objects, people, text, and actions.",
+            prompt,
             types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
         ],
     )
