@@ -36,27 +36,25 @@ def retrieve_frames(collection: chromadb.Collection, query_embedding: list[float
 
 def answer_question(client: genai.Client, question: str,
                     retrieved_metadatas: list[dict]) -> str:
-    """Ask Gemini Vision to answer question using retrieved frames, with local fallback."""
+    """Ask Gemini Vision to answer question using retrieved frames with explicit timestamps."""
     if config.USE_LOCAL:
         return answer_question_local(question, retrieved_metadatas)
 
-    image_parts = []
+    contents = [
+        "You are a precise visual analyst. You have been given several video frames with their timestamps. "
+        "Answer the question using ONLY what you see in these specific frames. "
+        "Quote any visible text, describe colors, shapes, and positions. "
+        "End your answer with bullet-point citations using the EXACT timestamps provided for each frame (e.g., [HH:MM:SS])."
+    ]
+    
     for meta in retrieved_metadatas:
         with open(meta["frame_path"], "rb") as f:
             img_bytes = f.read()
-        image_parts.append(
+        contents.append(f"Frame at {meta['timestamp']}:")
+        contents.append(
             types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
         )
 
-    prompt = (
-        "You are a precise visual analyst. You have been given several video frames that are the most relevant "
-        "to the user's question. Answer the question using ONLY what you see in those frames. "
-        "Quote any visible text, describe colors, shapes, and positions. "
-        "If the question cannot be answered from the frames, say so clearly. "
-        "End your answer with bullet-point citations linking each statement to a frame timestamp."
-    )
-    contents = [prompt] + image_parts
-    
     try:
         response = client.models.generate_content(
             model=config.VISION_MODEL,
@@ -71,22 +69,42 @@ def answer_question(client: genai.Client, question: str,
         raise e
 
 def answer_question_local(question: str, retrieved_metadatas: list[dict]) -> str:
-    """Ask Ollama (Moondream) to answer question using retrieved frames."""
+    """Ask Ollama (Moondream) to answer question using retrieved frames with timestamps."""
     import ollama, base64
-    # Use only the top frame for simplicity
-    with open(retrieved_metadatas[0]["frame_path"], "rb") as f:
-        img_b64 = base64.b64encode(f.read()).decode()
+    
+    # Construct a combined prompt for local model
+    images = []
+    frame_context = ""
+    for meta in retrieved_metadatas:
+        with open(meta["frame_path"], "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode()
+        images.append(img_b64)
+        frame_context += f"- Frame at {meta['timestamp']}\n"
     
     prompt = (
-        f"Based on this image, please answer the question: {question}. "
-        "Be direct and describe what you see."
+        f"You are looking at several frames from a video at these timestamps:\n{frame_context}\n"
+        f"Question: {question}\n"
+        "Please answer based on the visual evidence in these frames. Be direct."
     )
     
-    response = ollama.chat(
-        model=config.OLLAMA_MODEL,
-        messages=[{"role": "user", "content": prompt, "images": [img_b64]}]
-    )
-    return response["message"]["content"]
+    # Note: Most local models like Moondream handle 1 image best, 
+    # but we can try passing multiple if the Ollama version supports it.
+    # Otherwise, we fallback to the most relevant one.
+    try:
+        response = ollama.chat(
+            model=config.OLLAMA_MODEL,
+            messages=[{"role": "user", "content": prompt, "images": images}]
+        )
+        return response["message"]["content"]
+    except Exception:
+        # Fallback to single image if multiple fail
+        with open(retrieved_metadatas[0]["frame_path"], "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode()
+        response = ollama.chat(
+            model=config.OLLAMA_MODEL,
+            messages=[{"role": "user", "content": question, "images": [img_b64]}]
+        )
+        return response["message"]["content"]
 
 def query_video(collection: chromadb.Collection, client: genai.Client,
                 question: str) -> str:
