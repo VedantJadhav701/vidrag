@@ -52,9 +52,9 @@ export default function VidRAGApp() {
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollIntoView({ behavior: "smooth" });
+      scrollRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
-  }, [messages]);
+  }, [messages, isAsking]);
 
   const startIngestion = async (overrideUrl?: string) => {
     const targetUrl = overrideUrl || url;
@@ -150,7 +150,7 @@ export default function VidRAGApp() {
   };
 
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
+    <main className="flex flex-col items-center justify-start min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
       <div className="w-full max-w-4xl">
         <header className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-2">
@@ -284,7 +284,7 @@ export default function VidRAGApp() {
                </div>
             </div>
 
-            <ScrollArea className="flex-1 p-6">
+            <ScrollArea className="flex-1 p-6 min-h-0">
               <div className="space-y-8">
                 {messages.length === 0 && (
                   <div className="text-center py-20 opacity-40">
