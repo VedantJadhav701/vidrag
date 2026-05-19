@@ -1,0 +1,89 @@
+# Phase 3: Query engine
+
+Create `query.py` with the following code.
+
+## Code for `query.py`
+```python
+"""Query engine: retrieve relevant frames and answer visual questions."""
+from typing import Optional
+
+from google import genai
+from google.genai import types
+import chromadb
+
+import config
+
+def embed_query(client: genai.Client, question: str) -> list[float]:
+    """Embed user question with RETRIEVAL_QUERY task type."""
+    result = client.models.embed_content(
+        model=config.EMBEDDING_MODEL,
+        contents=question,
+        config={"task_type": "RETRIEVAL_QUERY"},
+    )
+    return result.embeddings[0].values
+
+def retrieve_frames(collection: chromadb.Collection, query_embedding: list[float],
+                    top_k: int = None) -> list[dict]:
+    """Retrieve top_k frames and return their metadata."""
+    if top_k is None:
+        top_k = config.TOP_K_RESULTS
+    results = collection.query(query_embeddings=[query_embedding], n_results=top_k)
+    return results["metadatas"][0]
+
+def answer_question(client: genai.Client, question: str,
+                    retrieved_metadatas: list[dict]) -> str:
+    """Ask Gemini Vision to answer question using retrieved frames."""
+    image_parts = []
+    for meta in retrieved_metadatas:
+        with open(meta["frame_path"], "rb") as f:
+            img_bytes = f.read()
+        image_parts.append(
+            types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg")
+        )
+
+    prompt = (
+        "You are a helpful assistant. Based on the attached video frames, "
+        f"answer the following question: {question}\n\n"
+        "If the frames do not contain enough information, say so."
+    )
+    contents = [prompt] + image_parts
+    response = client.models.generate_content(
+        model=config.VISION_MODEL,
+        contents=contents,
+    )
+    return response.text
+
+def query_video(collection: chromadb.Collection, client: genai.Client,
+                question: str) -> str:
+    """End-to-end query: embed, retrieve, answer."""
+    q_emb = embed_query(client, question)
+    metas = retrieve_frames(collection, q_emb)
+    if not metas:
+        return "No relevant frames found."
+    answer = answer_question(client, question, metas)
+    citations = "\n".join([f"  - {m['timestamp']} ({m['frame_path']})" for m in metas])
+    return f"{answer}\n\nSources:\n{citations}"
+```
+
+### Verification
+After phase2, test with:
+
+```bash
+python -c "
+from ingest import ingest
+from query import query_video
+client, col = ingest('https://youtu.be/dQw4w9WgXcQ')
+ans = query_video(col, client, 'What is the background color?')
+print(ans)
+"
+```
+Should output a natural language answer with frame sources.
+
+### Git commit & push
+```bash
+git add query.py
+git commit -m "Phase 3: query engine (embed, retrieve, answer)"
+git push origin main
+```
+
+Next: phase4_cli.md.

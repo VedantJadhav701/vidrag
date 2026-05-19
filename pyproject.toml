@@ -1,0 +1,17 @@
+[project]
+name = "vidrag"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "chromadb>=1.5.9",
+    "click>=8.4.0",
+    "google-genai>=2.4.0",
+    "gradio>=6.14.0",
+    "opencv-python-headless>=4.13.0.92",
+    "pillow>=12.2.0",
+    "python-dotenv>=1.2.2",
+    "tqdm>=4.67.3",
+    "yt-dlp>=2026.3.17",
+]

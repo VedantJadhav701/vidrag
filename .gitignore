@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+videos/
+frames/
+chroma_db/
+.DS_Store
+dist/
+*.egg-info/
+.venv/
