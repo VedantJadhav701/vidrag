@@ -6,11 +6,21 @@ import config
 def describe_frame_local(frame_path: str) -> str:
     with open(frame_path, "rb") as f:
         img_b64 = base64.b64encode(f.read()).decode()
+    
+    prompt = (
+        "You are a professional video analyst. Examine this frame as if you were writing a forensic report. "
+        "List every visible element: objects, people, clothing, text, numbers, colors, lighting, facial expressions, "
+        "background details, and any actions. If there is text or a diagram, transcribe it exactly. "
+        "If a person is speaking, note their emotion and gesture. "
+        "Describe the scene with enough precision that a blind person could imagine it. "
+        "Do NOT make assumptions – only describe what is clearly visible."
+    )
+
     response = ollama.chat(
         model=config.OLLAMA_MODEL,
         messages=[{
             "role": "user",
-            "content": "Describe this video frame in detail, focusing on visible objects, people, text, and actions.",
+            "content": prompt,
             "images": [img_b64]
         }]
     )

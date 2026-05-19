@@ -179,6 +179,7 @@ async def list_videos():
     return {}
 
 # Serve frames directory as static files
+config.FRAMES_DIR.mkdir(exist_ok=True)
 app.mount("/api/frames", StaticFiles(directory=str(config.FRAMES_DIR)), name="frames")
 
 if __name__ == "__main__":

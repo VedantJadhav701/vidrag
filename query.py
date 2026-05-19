@@ -69,23 +69,28 @@ def answer_question(client: genai.Client, question: str,
         raise e
 
 def answer_question_local(question: str, retrieved_metadatas: list[dict]) -> str:
-    """Ask Ollama (Moondream) to answer question using retrieved frames with high-detail prompt."""
-    import ollama, base64
-    
+    """Answer a question using Ollama vision with all retrieved frames."""
+    import ollama
+    import base64
+
     images = []
-    frame_context = ""
+    frame_context_parts = []
     for meta in retrieved_metadatas:
         with open(meta["frame_path"], "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode()
         images.append(img_b64)
-        frame_context += f"- Frame at {meta['timestamp']}\n"
-    
+        frame_context_parts.append(f"- Frame at {meta['timestamp']}")
+
+    frame_context = "\n".join(frame_context_parts)
     prompt = (
-        f"You are analyzing frames from a video at these timestamps:\n{frame_context}\n"
-        f"Question: {question}\n"
-        "Describe what you SEE in detail. Quote any visible text. Be specific and act as a precise visual analyst."
+        f"You are analyzing frames from a video at these timestamps:\n{frame_context}\n\n"
+        f"Question: {question}\n\n"
+        "Look closely at each frame. Describe what you SEE in detail: objects, text, colors, people, actions. "
+        "If there is text on a slide or whiteboard, transcribe it exactly. "
+        "Be specific and base your answer only on the visual evidence. "
+        "If the question cannot be answered from the frames, say so."
     )
-    
+
     try:
         response = ollama.chat(
             model=config.OLLAMA_MODEL,
@@ -93,7 +98,7 @@ def answer_question_local(question: str, retrieved_metadatas: list[dict]) -> str
         )
         return response["message"]["content"]
     except Exception:
-        # Fallback to single image if multiple fail
+        # Fallback to single image if multiple fail (some models/Ollama versions)
         with open(retrieved_metadatas[0]["frame_path"], "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode()
         response = ollama.chat(
