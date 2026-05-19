@@ -3,7 +3,7 @@ import time
 import json
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable
 
 import yt_dlp
 import cv2
@@ -19,20 +19,25 @@ os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
 import config
 
-def download_video(url: str) -> Path:
+def download_video(url: str, progress_callback: Optional[Callable] = None) -> Path:
     """Download a YouTube video and return its local path."""
+    if progress_callback:
+        progress_callback({"stage": "downloading", "progress": 0.05})
     config.VIDEO_DIR.mkdir(exist_ok=True)
     ydl_opts = {
         "outtmpl": str(config.VIDEO_DIR / "%(id)s.%(ext)s"),
         "format": "mp4",
         "quiet": True,
+        "noplaylist": True,
     }
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         video_path = Path(ydl.prepare_filename(info))
+    if progress_callback:
+        progress_callback({"stage": "downloading", "progress": 0.2})
     return video_path
 
-def extract_frames(video_path: Path, interval: int = None) -> list[dict]:
+def extract_frames(video_path: Path, interval: int = None, progress_callback: Optional[Callable] = None) -> list[dict]:
     """Extract frames at given interval, return list with timestamp & path."""
     if interval is None:
         interval = config.FRAME_INTERVAL_SECONDS
@@ -45,7 +50,11 @@ def extract_frames(video_path: Path, interval: int = None) -> list[dict]:
     config.FRAMES_DIR.mkdir(exist_ok=True)
     video_id = video_path.stem
 
-    for sec in tqdm(range(0, int(duration), interval), desc="Extracting frames"):
+    total_secs = int(duration)
+    for i, sec in enumerate(tqdm(range(0, total_secs, interval), desc="Extracting frames")):
+        if progress_callback:
+            prog = 0.2 + (i / (total_secs / interval)) * 0.2
+            progress_callback({"stage": "extracting", "progress": prog})
         cap.set(cv2.CAP_PROP_POS_MSEC, sec * 1000)
         ret, frame = cap.read()
         if not ret:
@@ -90,15 +99,15 @@ def format_timestamp(seconds: int) -> str:
     s = seconds % 60
     return f"{h:02d}:{m:02d}:{s:02d}"
 
-def ingest(url: str) -> tuple[genai.Client, chromadb.Collection]:
+def ingest(url: str, progress_callback: Optional[Callable] = None) -> tuple[genai.Client, chromadb.Collection]:
     """Run full ingestion pipeline for a YouTube URL."""
     client = genai.Client(api_key=config.GEMINI_API_KEY)
 
     print(f"Downloading {url}...")
-    video_path = download_video(url)
+    video_path = download_video(url, progress_callback)
     video_id = video_path.stem
 
-    frames = extract_frames(video_path, config.FRAME_INTERVAL_SECONDS)
+    frames = extract_frames(video_path, config.FRAME_INTERVAL_SECONDS, progress_callback)
     if not frames:
         raise RuntimeError("No frames extracted.")
 
@@ -114,7 +123,17 @@ def ingest(url: str) -> tuple[genai.Client, chromadb.Collection]:
     )
 
     ids, embeddings, metadatas, documents = [], [], [], []
-    for frame in tqdm(frames, desc="Describing and embedding"):
+    total_frames = len(frames)
+    for i, frame in enumerate(tqdm(frames, desc="Describing and embedding")):
+        if progress_callback:
+            prog = 0.4 + (i / total_frames) * 0.55
+            progress_callback({
+                "stage": "describing", 
+                "progress": prog,
+                "current_frame": i + 1,
+                "total_frames": total_frames
+            })
+        
         description = describe_frame(client, frame["frame_path"])
         time.sleep(config.FRAME_SLEEP_SECONDS)
 
@@ -147,6 +166,9 @@ def ingest(url: str) -> tuple[genai.Client, chromadb.Collection]:
     }
     with open(index_path, "w") as f:
         json.dump(index, f, indent=2)
+
+    if progress_callback:
+        progress_callback({"stage": "complete", "progress": 1.0, "video_id": video_id})
 
     print(f"Ingestion complete. Video ID: {video_id}")
     return client, collection
