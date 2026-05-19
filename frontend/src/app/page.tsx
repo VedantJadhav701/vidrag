@@ -33,7 +33,22 @@ export default function VidRAGApp() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isAsking, setIsAsking] = useState(false);
+  const [recentVideos, setRecentVideos] = useState<any>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetchRecentVideos();
+  }, []);
+
+  const fetchRecentVideos = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/videos`);
+      const data = await res.json();
+      setRecentVideos(data);
+    } catch (err) {
+      console.error("Failed to fetch recent videos", err);
+    }
+  };
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -41,8 +56,9 @@ export default function VidRAGApp() {
     }
   }, [messages]);
 
-  const startIngestion = async () => {
-    if (!url) return;
+  const startIngestion = async (overrideUrl?: string) => {
+    const targetUrl = overrideUrl || url;
+    if (!targetUrl) return;
     setStatus("ingesting");
     setProgress(0);
     setStage("Starting...");
@@ -51,11 +67,17 @@ export default function VidRAGApp() {
       const res = await fetch(`${API_BASE}/api/sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, interval }),
+        body: JSON.stringify({ url: targetUrl, interval }),
       });
       const data = await res.json();
       setSessionId(data.session_id);
-      connectWebSocket(data.session_id);
+      
+      if (data.already_indexed) {
+        setStatus("ready");
+        setStage("Loaded from index");
+      } else {
+        connectWebSocket(data.session_id);
+      }
     } catch (err) {
       setStatus("error");
       setStage("Failed to connect to backend");
@@ -72,6 +94,7 @@ export default function VidRAGApp() {
       
       if (data.stage === "complete") {
         setStatus("ready");
+        fetchRecentVideos(); // Refresh list
         ws.close();
       } else if (data.stage === "error") {
         setStatus("error");
@@ -91,6 +114,7 @@ export default function VidRAGApp() {
     
     const userMsg: Message = { role: "user", content: input };
     setMessages((prev) => [...prev, userMsg]);
+    const currentInput = input;
     setInput("");
     setIsAsking(true);
 
@@ -98,7 +122,7 @@ export default function VidRAGApp() {
       const res = await fetch(`${API_BASE}/api/sessions/${sessionId}/ask`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: input }),
+        body: JSON.stringify({ question: currentInput }),
       });
       const data = await res.json();
       
@@ -122,6 +146,7 @@ export default function VidRAGApp() {
     setStage("");
     setMessages([]);
     setUrl("");
+    fetchRecentVideos();
   };
 
   return (
@@ -142,51 +167,79 @@ export default function VidRAGApp() {
         </header>
 
         {status === "idle" && (
-          <Card className="border-none shadow-xl bg-white/80 backdrop-blur-sm">
-            <CardHeader className="text-center space-y-2">
-              <CardTitle className="text-3xl font-extrabold text-slate-900">Understand any video visually.</CardTitle>
-              <CardDescription className="text-lg text-slate-600">
-                Paste a YouTube link and ask questions about what's happening on screen.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6 pt-4">
-              <div className="flex flex-col gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700 ml-1">YouTube Video URL</label>
-                  <Input 
-                    placeholder="https://www.youtube.com/watch?v=..." 
-                    value={url} 
-                    onChange={(e) => setUrl(e.target.value)}
-                    className="h-12 text-lg rounded-xl border-slate-200 focus:ring-indigo-500"
-                  />
-                </div>
-                <div className="flex items-center gap-4">
-                   <div className="flex-1 space-y-2">
-                    <label className="text-sm font-medium text-slate-700 ml-1">Frame Interval (sec)</label>
+          <div className="space-y-8">
+            <Card className="border-none shadow-xl bg-white/80 backdrop-blur-sm">
+              <CardHeader className="text-center space-y-2">
+                <CardTitle className="text-3xl font-extrabold text-slate-900">Understand any video visually.</CardTitle>
+                <CardDescription className="text-lg text-slate-600">
+                  Paste a YouTube link and ask questions about what's happening on screen.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6 pt-4">
+                <div className="flex flex-col gap-4">
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-slate-700 ml-1">YouTube Video URL</label>
                     <Input 
-                      type="number"
-                      value={interval} 
-                      onChange={(e) => setIntervalValue(parseInt(e.target.value))}
-                      className="h-10 rounded-lg border-slate-200"
+                      placeholder="https://www.youtube.com/watch?v=..." 
+                      value={url} 
+                      onChange={(e) => setUrl(e.target.value)}
+                      className="h-12 text-lg rounded-xl border-slate-200 focus:ring-indigo-500"
                     />
                   </div>
-                  <div className="flex-1 flex flex-col justify-end">
-                    <Button 
-                      onClick={startIngestion} 
-                      className="h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition-all active:scale-95"
-                    >
-                      Process Video
-                    </Button>
+                  <div className="flex items-center gap-4">
+                    <div className="flex-1 space-y-2">
+                      <label className="text-sm font-medium text-slate-700 ml-1">Frame Interval (sec)</label>
+                      <Input 
+                        type="number"
+                        value={interval} 
+                        onChange={(e) => setIntervalValue(parseInt(e.target.value))}
+                        className="h-10 rounded-lg border-slate-200"
+                      />
+                    </div>
+                    <div className="flex-1 flex flex-col justify-end">
+                      <Button 
+                        onClick={() => startIngestion()} 
+                        className="h-12 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 transition-all active:scale-95"
+                      >
+                        Process Video
+                      </Button>
+                    </div>
                   </div>
                 </div>
+              </CardContent>
+              <CardFooter className="bg-slate-50/50 rounded-b-xl border-t border-slate-100 p-6 flex justify-around text-slate-500 text-sm">
+                <div className="flex items-center gap-2"><ImageIcon className="w-4 h-4" /> Visual Analysis</div>
+                <div className="flex items-center gap-2"><MessageSquare className="w-4 h-4" /> Semantic Q&A</div>
+                <div className="flex items-center gap-2"><ExternalLink className="w-4 h-4" /> Frame Sources</div>
+              </CardFooter>
+            </Card>
+
+            {Object.keys(recentVideos).length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-slate-900 ml-1">Recent Videos</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {Object.entries(recentVideos).slice(0, 4).map(([id, info]: [string, any]) => (
+                    <Card key={id} className="cursor-pointer hover:border-indigo-300 transition-all group overflow-hidden" onClick={() => startIngestion(`https://youtu.be/${id}`)}>
+                      <CardContent className="p-0 flex h-24">
+                        <div className="w-32 bg-slate-200 flex-shrink-0 relative overflow-hidden">
+                           <img 
+                              src={`${API_BASE}/api/frames/${id}/${id}_000000.jpg`} 
+                              className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                              onError={(e: any) => e.target.src = "/globe.svg"}
+                           />
+                           <div className="absolute inset-0 bg-black/20 group-hover:bg-black/0 transition-colors" />
+                        </div>
+                        <div className="p-3 flex flex-col justify-center overflow-hidden">
+                          <p className="font-bold text-sm text-slate-900 truncate">{info.title}</p>
+                          <p className="text-xs text-slate-500 mt-1">{info.frames} frames indexed</p>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
               </div>
-            </CardContent>
-            <CardFooter className="bg-slate-50/50 rounded-b-xl border-t border-slate-100 p-6 flex justify-around text-slate-500 text-sm">
-               <div className="flex items-center gap-2"><ImageIcon className="w-4 h-4" /> Visual Analysis</div>
-               <div className="flex items-center gap-2"><MessageSquare className="w-4 h-4" /> Semantic Q&A</div>
-               <div className="flex items-center gap-2"><ExternalLink className="w-4 h-4" /> Frame Sources</div>
-            </CardFooter>
-          </Card>
+            )}
+          </div>
         )}
 
         {(status === "ingesting" || status === "error") && (

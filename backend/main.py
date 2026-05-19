@@ -91,12 +91,33 @@ async def run_ingestion(session_id: str, url: str, interval: int):
 
 @app.post("/api/sessions")
 async def create_session(request: IngestRequest, background_tasks: BackgroundTasks):
+    # Check if already indexed
+    index_path = Path("index.json")
+    video_id = None
+    if "v=" in request.url:
+        video_id = request.url.split("v=")[1].split("&")[0]
+    elif "youtu.be/" in request.url:
+        video_id = request.url.split("youtu.be/")[1].split("?")[0]
+
+    if video_id and index_path.exists():
+        with open(index_path, "r") as f:
+            index = json.load(f)
+        if video_id in index:
+            session_id = str(uuid.uuid4())
+            sessions[session_id] = {
+                "status": "ready", 
+                "url": request.url, 
+                "video_id": video_id, 
+                "collection": index[video_id]["collection"]
+            }
+            return {"session_id": session_id, "already_indexed": True}
+
     session_id = str(uuid.uuid4())
     sessions[session_id] = {"status": "ingesting", "url": request.url}
     
     background_tasks.add_task(run_ingestion, session_id, request.url, request.interval)
     
-    return {"session_id": session_id}
+    return {"session_id": session_id, "already_indexed": False}
 
 @app.get("/api/sessions/{session_id}")
 async def get_session(session_id: str):
@@ -148,6 +169,14 @@ async def ask_question(session_id: str, request: QueryRequest):
         "answer": answer,
         "sources": sources
     }
+
+@app.get("/api/videos")
+async def list_videos():
+    index_path = Path("index.json")
+    if index_path.exists():
+        with open(index_path, "r") as f:
+            return json.load(f)
+    return {}
 
 # Serve frames directory as static files
 app.mount("/api/frames", StaticFiles(directory=str(config.FRAMES_DIR)), name="frames")
