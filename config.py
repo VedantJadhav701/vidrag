@@ -20,8 +20,8 @@ FRAME_INTERVAL_SECONDS = 30
 TOP_K_RESULTS = 3
 
 # Gemini models
-VISION_MODEL = "gemini-2.0-flash"
-EMBEDDING_MODEL = "models/text-embedding-004"
+VISION_MODEL = "gemini-flash-lite-latest"
+EMBEDDING_MODEL = "models/gemini-embedding-2"
 
 # Local models (phase 6)
 USE_LOCAL = os.getenv("USE_LOCAL", "false").lower() == "true"
