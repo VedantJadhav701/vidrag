@@ -102,16 +102,23 @@ def describe_frame(client: genai.Client, frame_path: str) -> str:
             return describe_frame_local(frame_path)
         raise e
 
-def embed_text(client: genai.Client, text: str) -> list[float]:
-    """Get text embedding using Gemini."""
+def embed_text(client: genai.Client, text: str) -> tuple[list[float], str]:
+    """Get text embedding, returning (vector, model_name)."""
     if config.USE_LOCAL:
-        return embed_text_local(text)
-    result = client.models.embed_content(
-        model=config.EMBEDDING_MODEL,
-        contents=text,
-        config={"task_type": "RETRIEVAL_DOCUMENT"},
-    )
-    return result.embeddings[0].values
+        return embed_text_local(text), "local"
+    try:
+        result = client.models.embed_content(
+            model=config.EMBEDDING_MODEL,
+            contents=text,
+            config={"task_type": "RETRIEVAL_DOCUMENT"},
+        )
+        return result.embeddings[0].values, "gemini"
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "429" in err_msg or "resource_exhausted" in err_msg:
+            print("Embedding API limit reached. Falling back to local embedding.")
+            return embed_text_local(text), "local"
+        raise e
 
 def format_timestamp(seconds: int) -> str:
     """Convert seconds to HH:MM:SS format."""
@@ -158,7 +165,7 @@ def ingest(url: str, progress_callback: Optional[Callable] = None) -> tuple[gena
         description = describe_frame(client, frame["frame_path"])
         time.sleep(config.FRAME_SLEEP_SECONDS)
 
-        embedding = embed_text(client, description)
+        embedding, emb_model = embed_text(client, description)
         ts = format_timestamp(frame["timestamp_sec"])
 
         ids.append(f"{video_id}_{frame['timestamp_sec']}")
@@ -168,6 +175,7 @@ def ingest(url: str, progress_callback: Optional[Callable] = None) -> tuple[gena
             "timestamp": ts,
             "frame_path": frame["frame_path"],
             "video_id": video_id,
+            "emb_model": emb_model,
         })
         documents.append(description)
 

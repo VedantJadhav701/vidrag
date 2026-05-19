@@ -20,7 +20,7 @@ FRAME_INTERVAL_SECONDS = 30
 TOP_K_RESULTS = 3
 
 # Gemini models
-VISION_MODEL = "gemini-2.5-flash-lite"
+VISION_MODEL = "gemini-flash-latest"
 EMBEDDING_MODEL = "models/gemini-embedding-2"
 
 # Local models (phase 6)
@@ -29,5 +29,5 @@ OLLAMA_MODEL = "moondream"
 OLLAMA_URL = "http://localhost:11434"
 
 # Rate limiting
-FRAME_SLEEP_SECONDS = 5
+FRAME_SLEEP_SECONDS = 2
 

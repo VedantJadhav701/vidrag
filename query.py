@@ -8,16 +8,23 @@ import chromadb
 import config
 from local_vision import embed_text_local
 
-def embed_query(client: genai.Client, question: str) -> list[float]:
-    """Embed user question with RETRIEVAL_QUERY task type."""
-    if config.USE_LOCAL:
+def embed_query(client: genai.Client, question: str, emb_model: str = "gemini") -> list[float]:
+    """Embed user question with specified model."""
+    if config.USE_LOCAL or emb_model == "local":
         return embed_text_local(question)
-    result = client.models.embed_content(
-        model=config.EMBEDDING_MODEL,
-        contents=question,
-        config={"task_type": "RETRIEVAL_QUERY"},
-    )
-    return result.embeddings[0].values
+    try:
+        result = client.models.embed_content(
+            model=config.EMBEDDING_MODEL,
+            contents=question,
+            config={"task_type": "RETRIEVAL_QUERY"},
+        )
+        return result.embeddings[0].values
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "429" in err_msg or "resource_exhausted" in err_msg:
+            print("Embedding API limit reached. Falling back to local embedding for query.")
+            return embed_text_local(question)
+        raise e
 
 def retrieve_frames(collection: chromadb.Collection, query_embedding: list[float],
                     top_k: int = None) -> list[dict]:
@@ -64,21 +71,33 @@ def answer_question(client: genai.Client, question: str,
         raise e
 
 def answer_question_local(question: str, retrieved_metadatas: list[dict]) -> str:
-    """Ask Ollama (LLaVA/Moondream) to answer question using retrieved frames."""
+    """Ask Ollama (Moondream) to answer question using retrieved frames."""
     import ollama, base64
     # Use only the top frame for simplicity
     with open(retrieved_metadatas[0]["frame_path"], "rb") as f:
         img_b64 = base64.b64encode(f.read()).decode()
+    
+    prompt = (
+        f"Based on this image, please answer the question: {question}. "
+        "Be direct and describe what you see."
+    )
+    
     response = ollama.chat(
         model=config.OLLAMA_MODEL,
-        messages=[{"role": "user", "content": question, "images": [img_b64]}]
+        messages=[{"role": "user", "content": prompt, "images": [img_b64]}]
     )
     return response["message"]["content"]
 
 def query_video(collection: chromadb.Collection, client: genai.Client,
                 question: str) -> str:
     """End-to-end query: embed, retrieve, answer."""
-    q_emb = embed_query(client, question)
+    # Peek at first record to see which embedding model was used
+    sample = collection.get(limit=1)
+    emb_model = "gemini"
+    if sample and sample["metadatas"]:
+        emb_model = sample["metadatas"][0].get("emb_model", "gemini")
+
+    q_emb = embed_query(client, question, emb_model)
     metas = retrieve_frames(collection, q_emb)
     if not metas:
         return "No relevant frames found."
