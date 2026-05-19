@@ -69,10 +69,9 @@ def answer_question(client: genai.Client, question: str,
         raise e
 
 def answer_question_local(question: str, retrieved_metadatas: list[dict]) -> str:
-    """Ask Ollama (Moondream) to answer question using retrieved frames with timestamps."""
+    """Ask Ollama (Moondream) to answer question using retrieved frames with high-detail prompt."""
     import ollama, base64
     
-    # Construct a combined prompt for local model
     images = []
     frame_context = ""
     for meta in retrieved_metadatas:
@@ -82,14 +81,11 @@ def answer_question_local(question: str, retrieved_metadatas: list[dict]) -> str
         frame_context += f"- Frame at {meta['timestamp']}\n"
     
     prompt = (
-        f"You are looking at several frames from a video at these timestamps:\n{frame_context}\n"
+        f"You are analyzing frames from a video at these timestamps:\n{frame_context}\n"
         f"Question: {question}\n"
-        "Please answer based on the visual evidence in these frames. Be direct."
+        "Describe what you SEE in detail. Quote any visible text. Be specific and act as a precise visual analyst."
     )
     
-    # Note: Most local models like Moondream handle 1 image best, 
-    # but we can try passing multiple if the Ollama version supports it.
-    # Otherwise, we fallback to the most relevant one.
     try:
         response = ollama.chat(
             model=config.OLLAMA_MODEL,
@@ -102,7 +98,7 @@ def answer_question_local(question: str, retrieved_metadatas: list[dict]) -> str
             img_b64 = base64.b64encode(f.read()).decode()
         response = ollama.chat(
             model=config.OLLAMA_MODEL,
-            messages=[{"role": "user", "content": question, "images": [img_b64]}]
+            messages=[{"role": "user", "content": prompt, "images": [img_b64]}]
         )
         return response["message"]["content"]
 
