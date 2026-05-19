@@ -69,11 +69,9 @@ def extract_frames(video_path: Path, interval: int = None, progress_callback: Op
     return frames
 
 def describe_frame(client: genai.Client, frame_path: str) -> str:
-    """Use Gemini Vision to describe a single frame."""
+    """Use Gemini Vision with automatic local fallback if quota is exceeded."""
     if config.USE_LOCAL:
         return describe_frame_local(frame_path)
-    with open(frame_path, "rb") as f:
-        img_bytes = f.read()
     
     prompt = (
         "You are a professional video analyst. Examine this frame as if you were writing a forensic report. "
@@ -83,15 +81,26 @@ def describe_frame(client: genai.Client, frame_path: str) -> str:
         "Describe the scene with enough precision that a blind person could imagine it. "
         "Do NOT make assumptions – only describe what is clearly visible."
     )
-    
-    response = client.models.generate_content(
-        model=config.VISION_MODEL,
-        contents=[
-            prompt,
-            types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
-        ],
-    )
-    return response.text
+
+    try:
+        with open(frame_path, "rb") as f:
+            img_bytes = f.read()
+        
+        response = client.models.generate_content(
+            model=config.VISION_MODEL,
+            contents=[
+                prompt,
+                types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"),
+            ],
+        )
+        return response.text
+    except Exception as e:
+        # Check for 429 or 503 specifically, or just any error if we want it "anyhow"
+        err_msg = str(e).lower()
+        if "429" in err_msg or "resource_exhausted" in err_msg or "503" in err_msg or "unavailable" in err_msg:
+            print(f"Cloud API limit reached or unavailable. Falling back to local model: {config.OLLAMA_MODEL}")
+            return describe_frame_local(frame_path)
+        raise e
 
 def embed_text(client: genai.Client, text: str) -> list[float]:
     """Get text embedding using Gemini."""

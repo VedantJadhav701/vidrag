@@ -29,7 +29,10 @@ def retrieve_frames(collection: chromadb.Collection, query_embedding: list[float
 
 def answer_question(client: genai.Client, question: str,
                     retrieved_metadatas: list[dict]) -> str:
-    """Ask Gemini Vision to answer question using retrieved frames."""
+    """Ask Gemini Vision to answer question using retrieved frames, with local fallback."""
+    if config.USE_LOCAL:
+        return answer_question_local(question, retrieved_metadatas)
+
     image_parts = []
     for meta in retrieved_metadatas:
         with open(meta["frame_path"], "rb") as f:
@@ -46,11 +49,19 @@ def answer_question(client: genai.Client, question: str,
         "End your answer with bullet-point citations linking each statement to a frame timestamp."
     )
     contents = [prompt] + image_parts
-    response = client.models.generate_content(
-        model=config.VISION_MODEL,
-        contents=contents,
-    )
-    return response.text
+    
+    try:
+        response = client.models.generate_content(
+            model=config.VISION_MODEL,
+            contents=contents,
+        )
+        return response.text
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "429" in err_msg or "resource_exhausted" in err_msg or "503" in err_msg or "unavailable" in err_msg:
+            print(f"Cloud API limit reached. Falling back to local model for answering.")
+            return answer_question_local(question, retrieved_metadatas)
+        raise e
 
 def answer_question_local(question: str, retrieved_metadatas: list[dict]) -> str:
     """Ask Ollama (LLaVA/Moondream) to answer question using retrieved frames."""
