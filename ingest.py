@@ -12,6 +12,8 @@ from google import genai
 from google.genai import types
 from tqdm import tqdm
 
+from local_vision import describe_frame_local, embed_text_local
+
 # Disable telemetry before importing chromadb
 os.environ["ANONYMIZED_TELEMETRY"] = "False"
 
@@ -57,6 +59,8 @@ def extract_frames(video_path: Path, interval: int = None) -> list[dict]:
 
 def describe_frame(client: genai.Client, frame_path: str) -> str:
     """Use Gemini Vision to describe a single frame."""
+    if config.USE_LOCAL:
+        return describe_frame_local(frame_path)
     with open(frame_path, "rb") as f:
         img_bytes = f.read()
     response = client.models.generate_content(
@@ -70,6 +74,8 @@ def describe_frame(client: genai.Client, frame_path: str) -> str:
 
 def embed_text(client: genai.Client, text: str) -> list[float]:
     """Get text embedding using Gemini."""
+    if config.USE_LOCAL:
+        return embed_text_local(text)
     result = client.models.embed_content(
         model=config.EMBEDDING_MODEL,
         contents=text,

@@ -25,7 +25,7 @@ EMBEDDING_MODEL = "models/gemini-embedding-2"
 
 # Local models (phase 6)
 USE_LOCAL = os.getenv("USE_LOCAL", "false").lower() == "true"
-OLLAMA_MODEL = "llava"
+OLLAMA_MODEL = "moondream"
 OLLAMA_URL = "http://localhost:11434"
 
 # Rate limiting
